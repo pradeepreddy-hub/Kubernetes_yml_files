@@ -1,0 +1,155 @@
+# Jenkins PVC Permission Issue – CrashLoopBackOff
+
+## Problem Summary
+
+When deploying Jenkins in Kubernetes using a PersistentVolume (PV) and PersistentVolumeClaim (PVC), the pod may enter:
+
+* `CrashLoopBackOff`
+* `Permission denied` errors in logs
+
+Example log error:
+
+```
+INSTALL WARNING: User: missing rw permissions on JENKINS_HOME: /var/jenkins_home
+Permission denied
+```
+
+---
+
+## Root Cause
+
+Jenkins runs inside the container as:
+
+```
+UID: 1000
+```
+
+But the mounted Persistent Volume is often owned by:
+
+```
+root:root
+```
+
+Because of this mismatch:
+
+* Jenkins cannot write to `/var/jenkins_home`
+* The container fails to start
+* Kubernetes restarts it repeatedly
+* Status becomes `CrashLoopBackOff`
+
+---
+
+## How to Identify the Issue
+
+1. Check pod status:
+
+```
+kubectl get pods
+```
+
+2. Check logs:
+
+```
+kubectl logs <pod-name>
+```
+
+If you see `Permission denied` related to `/var/jenkins_home`, it is a volume ownership issue.
+
+3. Confirm PVC is bound:
+
+```
+kubectl get pvc
+```
+
+PVC should show `Bound`.
+
+---
+
+## Solution
+
+### Step 1: Create Temporary Debug Pod
+
+Mount the same PVC into a temporary pod.
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: volume-fix
+spec:
+  containers:
+  - name: fixer
+    image: busybox
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - mountPath: /data
+      name: storage
+  volumes:
+  - name: storage
+    persistentVolumeClaim:
+      claimName: my-pvc
+```
+
+Apply:
+
+```
+kubectl apply -f volume-fix.yaml
+```
+
+---
+
+### Step 2: Fix Ownership
+
+Exec into the pod:
+
+```
+kubectl exec -it volume-fix -- sh
+```
+
+Run:
+
+```
+chown -R 1000:1000 /data
+exit
+```
+
+---
+
+### Step 3: Restart Jenkins Pod
+
+```
+kubectl delete pod jenkins-app
+```
+
+After restart:
+
+```
+kubectl get pods
+```
+
+Status should now be:
+
+```
+1/1 Running
+```
+
+---
+
+## Why This Works
+
+* The Persistent Volume was owned by `root`
+* Jenkins runs as user `1000`
+* After changing ownership to `1000:1000`
+* Jenkins gains write access
+* Container starts successfully
+
+---
+
+## Key Lessons
+
+* PVC `Bound` does NOT guarantee correct permissions
+* Always check logs when you see `CrashLoopBackOff`
+* Volume ownership must match container user
+* Manual PVs often require one-time permission fix
+
+End of document.
