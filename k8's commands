@@ -39,3 +39,4 @@ kubectl delete -f ebs-test-pod.yaml
 kubectl get pods -n kube-system | grep efs
 
 
+
