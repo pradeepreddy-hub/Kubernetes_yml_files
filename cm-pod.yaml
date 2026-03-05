@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: configmap-env-pod
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+  replicas: 2
+  selector:
+    matchLabels:
+      app: config-env
+  template:
+    metadata:
+      labels:
+        app: config-env
+    spec:
+      containers:
+      - name: app
+        image: nginx
+        volumeMounts:
+        - name: app-config
+          mountPath: /etc/config
+      volumes:
+      - name: app-config
+        configMap:
+          name: app-config 
+

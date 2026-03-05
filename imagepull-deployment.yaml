@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: private-image-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: private-app
+  template:
+    metadata:
+      labels:
+        app: private-app
+    spec:
+      containers:
+      - name: hello-worl-war
+        image: pradeepreddyhub/hello-world-war:latest
+        ports:
+        - containerPort: 8080
+      imagePullSecrets:
+      - name: my-registry-secret

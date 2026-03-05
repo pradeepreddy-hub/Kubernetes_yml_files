@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tomcat-config
+data:
+  tomcat-users.xml: |
+    <tomcat-users>
+      <role rolename="manager-gui"/>
+      <user username="admin" password="admin123" roles="manager-gui"/>
+    </tomcat-users>
+
+  server.xml: |
+    <Server port="8005" shutdown="SHUTDOWN">
+      <Service name="Catalina">
+        <Connector port="8080" protocol="HTTP/1.1"
+                   connectionTimeout="20000"
+                   redirectPort="8443" />
+        <Engine name="Catalina" defaultHost="localhost">
+          <Host name="localhost"  appBase="webapps"/>
+        </Engine>
+      </Service>
+    </Server>
