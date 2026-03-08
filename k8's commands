@@ -53,6 +53,22 @@ kubectl create secret docker-registry my-registry-secret \
   --docker-username=pradeepreddyhub \
   --docker-password=Pradeep*90 \
   --docker-email=pradeep.it.reddy@gmail.com
+____________________________________________________________________________________________
+
+route -n
+iptables -L
+Domain name for that service:- jenkins-svc.default.svc.cluster.local
+kubectl run ubuntu-pod \
+--image=ubuntu:22.04 \
+--restart=Never \
+--command -- sleep infinity
+kubectl exec -it ubuntu-pod -- bash
+apt update
+apt install net-tools
+apt install dnsutils -y
+nlookup jenkins-svc.default.svc.cluster.local
+
+
 
 
 
