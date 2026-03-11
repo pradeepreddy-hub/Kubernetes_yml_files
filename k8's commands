@@ -68,7 +68,43 @@ apt install net-tools
 apt install dnsutils -y
 nlookup jenkins-svc.default.svc.cluster.local
 kubectl get endpoints flask-cluster
+_____________________________________________________________________________________________
+kubectl apply -f liveness.yaml
+kubectl get pod liveness-probe-demo -w
 
+kubectl apply -f readiness.yaml
+kubectl get pod readiness-probe-demo -w
+
+kubectl apply -f startup.yaml
+kubectl get pod startup-probe-demo -w
+________________________________________________________________________
+# Check all services in istio-system
+kubectl get svc -n istio-system
+
+# Check jenkins service
+kubectl get svc jenkins-svc -n default
+
+# Check pods
+kubectl get pods -n default
+kubectl get pods -n default -o wide
+
+# Check gateway
+kubectl get gateway -n istio-system
+
+# Check virtualservice
+kubectl get virtualservice -n default
+
+# Describe jenkins pod
+kubectl describe pod jenkins-pod
+
+# Get virtualservice in yaml format
+kubectl get virtualservice jenkins -o yaml
+
+# Get service in yaml format
+kubectl get svc jenkins-svc -n default -o yaml
+
+# Ingress gateway logs
+kubectl logs -n istio-system -l app=istio-ingressgateway --tail=50
 
 
 
