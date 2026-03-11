@@ -71,12 +71,15 @@ kubectl get endpoints flask-cluster
 _____________________________________________________________________________________________
 kubectl apply -f liveness.yaml
 kubectl get pod liveness-probe-demo -w
+After 30s the file is deleted → liveness fails → pod restarts. Watch it with kubectl get pod liveness-probe-demo -w
 
 kubectl apply -f readiness.yaml
 kubectl get pod readiness-probe-demo -w
+Pod won't receive traffic for first 20s. Watch with kubectl get pod readiness-probe-demo -w — you'll see 0/1 Running then flip to 1/1
 
 kubectl apply -f startup.yaml
 kubectl get pod startup-probe-demo -w
+Startup probe allows up to 60s for the app to start. Only after startup succeeds does liveness take over.
 ________________________________________________________________________
 # Check all services in istio-system
 kubectl get svc -n istio-system
