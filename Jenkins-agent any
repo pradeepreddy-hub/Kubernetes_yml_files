@@ -1,51 +1,5 @@
 pipeline {
-    agent {
-        kubernetes {
-            yaml '''
-apiVersion: v1
-kind: Pod
-spec:
-  serviceAccountName: jenkins
-  containers:
-  - name: jnlp
-    image: jenkins/inbound-agent:latest
-    args: ["$(JENKINS_SECRET)", "$(JENKINS_NAME)"]
-    volumeMounts:
-    - name: workspace-volume
-      mountPath: /home/jenkins/agent
-
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:debug
-    command: ["/busybox/cat"]
-    tty: true
-    volumeMounts:
-    - name: kaniko-secret
-      mountPath: /kaniko/.docker
-    - name: workspace-volume
-      mountPath: /home/jenkins/agent
-
-  - name: tools
-    image: dtzar/helm-kubectl:latest
-    command: ["cat"]
-    tty: true
-    volumeMounts:
-    - name: workspace-volume
-      mountPath: /home/jenkins/agent
-
-  volumes:
-  - name: kaniko-secret
-    secret:
-      secretName: dockerhub-secret
-      items:
-      - key: .dockerconfigjson
-        path: config.json
-  - name: workspace-volume
-    emptyDir: {}
-  restartPolicy: Never
-'''
-        }
-    }
-
+    agent any
     environment {
         DOCKER_IMAGE = "docker.io/pradeepreddyhub/hello-world"
         IMAGE_TAG    = "${BUILD_NUMBER}"
@@ -53,89 +7,80 @@ spec:
         HELM_VERSION = "0.2.0"
         JFROG_URL    = "https://trial3sfswa.jfrog.io/artifactory/jenkins-helm"
         KUBE_NS      = "default"
+        DOCKER_CREDS = credentials('dockerhub-creds')
         JFROG_CREDS  = credentials('jfrog-creds')
     }
-
     stages {
-
         stage('Checkout') {
             steps {
                 git branch: 'main', url: 'https://github.com/pradeepreddy-hub/Jenkins_docker_hello-world-war.git'
             }
         }
-
-        stage('Build & Push Image') {
+        stage('Docker Build & Push') {
             steps {
-                container('kaniko') {          // ✅ kaniko for image build only
-                    sh '''
-                    /kaniko/executor \
-                      --dockerfile=Dockerfile \
-                      --context=/home/jenkins/agent/workspace/hello-world-war \
-                      --destination=$DOCKER_IMAGE:$IMAGE_TAG \
-                      --destination=$DOCKER_IMAGE:latest \
-                      --skip-tls-verify
-                    '''
-                }
+                sh """
+                docker build -t $DOCKER_IMAGE:$IMAGE_TAG .
+                echo $DOCKER_CREDS_PSW | docker login -u $DOCKER_CREDS_USR --password-stdin
+                docker push $DOCKER_IMAGE:$IMAGE_TAG
+                docker tag  $DOCKER_IMAGE:$IMAGE_TAG $DOCKER_IMAGE:latest
+                docker push $DOCKER_IMAGE:latest
+                """
             }
         }
-
-        stage('Helm Package & Push') {
+        stage('Helm Package & Push to JFrog') {
             steps {
-                container('tools') {           // ✅ tools for helm/curl
-                    sh '''
-                    helm lint $HELM_CHART
-                    helm package $HELM_CHART
-
-                    curl -u $JFROG_CREDS_USR:$JFROG_CREDS_PSW \
-                      -T ${HELM_CHART}-${HELM_VERSION}.tgz \
-                      ${JFROG_URL}/${HELM_CHART}-${HELM_VERSION}.tgz
-
-                    helm repo index . --url ${JFROG_URL}
-
-                    curl -u $JFROG_CREDS_USR:$JFROG_CREDS_PSW \
-                      -T index.yaml \
-                      ${JFROG_URL}/index.yaml
-                    '''
-                }
+                sh """
+                helm lint $HELM_CHART
+                helm package $HELM_CHART
+                curl -u $JFROG_CREDS_USR:$JFROG_CREDS_PSW \
+                  -T ${HELM_CHART}-${HELM_VERSION}.tgz \
+                  ${JFROG_URL}/${HELM_CHART}-${HELM_VERSION}.tgz
+                helm repo index . --url ${JFROG_URL}
+                curl -u $JFROG_CREDS_USR:$JFROG_CREDS_PSW \
+                  -T index.yaml \
+                  ${JFROG_URL}/index.yaml
+                """
             }
         }
-
         stage('Deploy to Kubernetes') {
             steps {
-                container('tools') {           // ✅ tools for helm deploy
-                    sh '''
-                    helm repo add jfrog-helm ${JFROG_URL} \
-                      --username $JFROG_CREDS_USR \
-                      --password $JFROG_CREDS_PSW \
-                      --force-update
-
-                    helm repo update
-
-                    helm upgrade --install $HELM_CHART jfrog-helm/$HELM_CHART \
-                      --version $HELM_VERSION \
-                      --set image.tag=$IMAGE_TAG \
-                      --namespace $KUBE_NS \
-                      --wait --timeout 2m
-                    '''
-                }
+                sh """
+                helm repo add jfrog-helm ${JFROG_URL} \
+                  --username $JFROG_CREDS_USR \
+                  --password $JFROG_CREDS_PSW \
+                  --force-update
+                helm repo update
+                helm upgrade --install $HELM_CHART jfrog-helm/$HELM_CHART \
+                  --version $HELM_VERSION \
+                  --set image.tag=$IMAGE_TAG \
+                  --namespace $KUBE_NS \
+                  --wait \
+                  --timeout 2m
+                """
             }
         }
-
-        stage('Verify') {
+        stage('Verify Deployment') {
             steps {
-                container('tools') {           // ✅ tools for kubectl
-                    sh '''
-                    kubectl rollout status deployment/$HELM_CHART -n $KUBE_NS
-                    kubectl get pods -n $KUBE_NS
-                    kubectl get svc -n $KUBE_NS
-                    '''
-                }
+                sh """
+                kubectl rollout status deployment/$HELM_CHART \
+                  --namespace $KUBE_NS \
+                  --timeout=120s
+                kubectl get pods -n $KUBE_NS -l app=$HELM_CHART
+                kubectl get svc  $HELM_CHART -n $KUBE_NS
+                """
             }
         }
     }
-
     post {
-        success { echo "SUCCESS 🚀" }
-        failure { echo "FAILED ❌" }
+        success {
+            echo "SUCCESS — http://<NODE-IP>:30080"
+        }
+        failure {
+            echo "FAILED — check logs above"
+        }
+        always {
+            sh "docker rmi $DOCKER_IMAGE:$IMAGE_TAG || true"
+            sh "docker rmi $DOCKER_IMAGE:latest || true"
+        }
     }
 }
